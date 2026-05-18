@@ -19,7 +19,7 @@ Source Code (.cvm)
   ┌──────────┐
   │  Parser  │  Recursive-descent parser → Abstract Syntax Tree (AST)
   └──────────┘
-        │  Program (tree of Stmt / Expr nodes)
+        │  Program (tree of Statementt / Expression nodes)
         ▼
   ┌──────────────┐
   │   Compiler   │  Walks the AST and emits bytecode into a Chunk
