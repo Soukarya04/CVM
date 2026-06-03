@@ -9,17 +9,21 @@ static const unordered_map<string, TokenType> KEYWORDS = {
     {"let",  TokenType::LET},
     {"if",  TokenType::IF},
     {"else",  TokenType::ELSE},
+    {"for", TokenType::FOR},
     {"while",  TokenType::WHILE},
     {"print",  TokenType::PRINT},
     {"input",  TokenType::INPUT},
+    {"sinput", TokenType::SINPUT},
     {"true",  TokenType::TRUE_KW},
     {"false",  TokenType::FALSE_KW},
+    {"fn",     TokenType::FN},       
+    {"return", TokenType::RETURN},
 };
 
 Lexer::Lexer(string source) : src(move(source)) {}
 
 
-// helpers :
+// helpers :-
 
 char Lexer::peek(int offset) const {
     size_t idx = pos + static_cast<size_t>(offset);
@@ -93,6 +97,20 @@ vector<Token> Lexer::tokenize() {
             continue;
         }
 
+        if (c == '"') {
+            string s;
+            pos++;  // skip opening "
+            while (pos < src.size() && src[pos] != '"') {
+                if (src[pos] == '\n') ++line; // track newlines inside strings
+                s += src[pos++];
+            }
+            if (pos >= src.size())
+                throw runtime_error("Lexer error at line " + to_string(line) + ": unterminated string");
+            pos++; // skip closing "
+            tokens.push_back(Token(TokenType::STRING_LIT, s, line));
+            continue;
+        }
+
         // single-character and two-character tokens
         advance();
         switch (c) {
@@ -100,18 +118,61 @@ vector<Token> Lexer::tokenize() {
             case '-': tokens.emplace_back(TokenType::MINUS,  "-", line); break;
             case '*': tokens.emplace_back(TokenType::STAR,  "*", line); break;
             case '/': tokens.emplace_back(TokenType::SLASH,  "/", line); break;
-            case '<': tokens.emplace_back(TokenType::LESS,  "<", line); break;
+            case '%': tokens.emplace_back(TokenType::PERCENT, "%", line); break;
             case '(': tokens.emplace_back(TokenType::LPAREN,  "(", line); break;
             case ')': tokens.emplace_back(TokenType::RPAREN,  ")", line); break;
             case '{': tokens.emplace_back(TokenType::LBRACE,  "{", line); break;
             case '}': tokens.emplace_back(TokenType::RBRACE,  "}", line); break;
             case ';': tokens.emplace_back(TokenType::SEMICOLON,  ";", line); break;
+            case ',': tokens.emplace_back(TokenType::COMMA, ",", line); break;
             case '=':
                 if (peek() == '=') {
                     advance();
                     tokens.emplace_back(TokenType::EQ_EQ, "==", line);
                 } else {
                     tokens.emplace_back(TokenType::ASSIGN, "=", line);
+                }
+                break;
+            case '!':
+                if (peek() == '=') {
+                    advance();
+                    tokens.emplace_back(TokenType::BANG_EQ, "!=", line);
+                } else {
+                    tokens.emplace_back(TokenType::BANG, "!", line);
+                }
+                break;
+            case '<':
+                if (peek() == '=') {
+                    advance();
+                    tokens.emplace_back(TokenType::LESS_EQ, "<=", line);
+                } else {
+                    tokens.emplace_back(TokenType::LESS, "<", line);
+                }
+                break;
+
+            case '>':
+                if (peek() == '=') {
+                    advance();
+                    tokens.emplace_back(TokenType::GREATER_EQ, ">=", line);
+                } else {
+                    tokens.emplace_back(TokenType::GREATER, ">", line);
+                }
+                break;
+            case '&':
+                if (peek() == '&') {
+                    advance();
+                    tokens.emplace_back(TokenType::AND, "&&", line);
+                } else {
+                    throw runtime_error("Lexer error at line " + to_string(line) + ": expected '&&'");
+                }
+                break;
+
+            case '|':
+                if (peek() == '|') {
+                    advance();
+                    tokens.emplace_back(TokenType::OR, "||", line);
+                } else {
+                    throw runtime_error("Lexer error at line " + to_string(line) + ": expected '||'");
                 }
                 break;
             default:
