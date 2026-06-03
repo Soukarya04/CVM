@@ -37,20 +37,27 @@ Token& Parser::expect(TokenType t, const string& msg) {
 
 Program Parser::parse() {
     Program prog;
-    while (!check(TokenType::EOF_T))
-        prog.stmts.push_back(parseStmt());
+    while (!check(TokenType::EOF_T)) {
+        if (check(TokenType::FN))
+            prog.functions.push_back(
+                unique_ptr<FnDecl>(static_cast<FnDecl*>(parseFnDecl().release())));
+        else
+            prog.stmts.push_back(parseStmt());
+    }
     return prog;
 }
 
-// ── Statements ─────────────────────────────────────────────────────────────
+// statements
 
 unique_ptr<Stmt> Parser::parseStmt() {
     if (check(TokenType::LET))   return parseLetStmt();
     if (check(TokenType::IF))    return parseIfStmt();
+    if (check(TokenType::FOR)) return parseForStmt();
     if (check(TokenType::WHILE)) return parseWhileStmt();
     if (check(TokenType::PRINT)) return parsePrintStmt();
+    if (check(TokenType::RETURN)) return parseReturnStmt();
 
-    // Assignment:  IDENT "=" expr ";"
+    // assignment:  IDENT "=" expr ";"
     if (check(TokenType::IDENT) &&
         pos + 1 < tokens.size() &&
         tokens[pos + 1].type == TokenType::ASSIGN)
@@ -85,9 +92,47 @@ unique_ptr<Stmt> Parser::parseIfStmt() {
     StmtList else_block;
     if (check(TokenType::ELSE)) {
         advance();  // consume "else"
-        else_block = parseBlock();
+        if (check(TokenType::IF)) {
+            // else if 
+            else_block.push_back(parseIfStmt());
+        } else {
+            // normal else
+            else_block = parseBlock();
+        }
     }
     return make_unique<IfStmt>(move(cond), move(then_block), move(else_block));
+}
+
+unique_ptr<Stmt> Parser::parseForStmt() {
+    advance();  // consume 'for'
+    expect(TokenType::LPAREN, "Expected '(' after 'for'");
+
+    // initialization
+    unique_ptr<Stmt> init;
+    if (check(TokenType::LET))
+        init = parseLetStmt();
+    else {
+        string name = advance().value;   
+        advance();                       // consume '='
+        auto val = parseExpr();
+        expect(TokenType::SEMICOLON, "Expected ';' after for init");
+        init = make_unique<AssignStmt>(move(name), move(val));
+    }
+
+    // condition
+    auto cond = parseExpr();
+    expect(TokenType::SEMICOLON, "Expected ';' after for condition");
+
+    // update
+    string uname = advance().value;   
+    advance();                        // consume '='
+    auto uval = parseExpr();
+    expect(TokenType::RPAREN, "Expected ')' after for update");
+
+    auto update = make_unique<AssignStmt>(move(uname), move(uval));
+
+    StmtList body = parseBlock();
+    return make_unique<ForStmt>(move(init), move(cond), move(update), move(body));
 }
 
 unique_ptr<Stmt> Parser::parseWhileStmt() {
@@ -115,25 +160,34 @@ StmtList Parser::parseBlock() {
     return stmts;
 }
 
-// ── Expressions ────────────────────────────────────────────────────────────
+// expressions
 
 unique_ptr<Expr> Parser::parseExpr() {
-    return parseComparison();
+    return parseLogical();
 }
 
-// comparison → addition ( ("==" | "<") addition )*
+// comparison -> addition ( ("==" | "<") addition )*
 unique_ptr<Expr> Parser::parseComparison() {
     auto left = parseAddition();
-    while (check(TokenType::EQ_EQ) || check(TokenType::LESS)) {
-        TokenType opType = advance().type;          // consume operator
-        char op = (opType == TokenType::EQ_EQ) ? '=' : '<';
+        while (check(TokenType::EQ_EQ)      || check(TokenType::LESS) ||
+        check(TokenType::GREATER)     || check(TokenType::LESS_EQ) ||
+        check(TokenType::GREATER_EQ) || check(TokenType::BANG_EQ))
+    {
+        TokenType opType = advance().type;
+        char op;
+        if      (opType == TokenType::EQ_EQ)      op = '=';
+        else if (opType == TokenType::BANG_EQ)     op = '!';
+        else if (opType == TokenType::LESS)        op = '<';
+        else if (opType == TokenType::GREATER)     op = '>';
+        else if (opType == TokenType::LESS_EQ)     op = 'L';  // L = <=
+        else                                       op = 'G';  // G = >=
         auto right = parseAddition();
         left = make_unique<BinaryExpr>(op, move(left), move(right));
     }
     return left;
 }
 
-// addition → multiply ( ("+" | "-") multiply )*
+// addition -> multiply ( ("+" | "-") multiply )*
 unique_ptr<Expr> Parser::parseAddition() {
     auto left = parseMultiply();
     while (check(TokenType::PLUS) || check(TokenType::MINUS)) {
@@ -145,29 +199,102 @@ unique_ptr<Expr> Parser::parseAddition() {
     return left;
 }
 
-// multiply → primary ( ("*" | "/") primary )*
+// multiply -> primary ( ("*" | "/" | "%") primary )*
 unique_ptr<Expr> Parser::parseMultiply() {
     auto left = parsePrimary();
-    while (check(TokenType::STAR) || check(TokenType::SLASH)) {
+    while (check(TokenType::STAR) || check(TokenType::SLASH) || check(TokenType::PERCENT)) {
         TokenType opType = advance().type;
-        char op = (opType == TokenType::STAR) ? '*' : '/';
+        char op = (opType == TokenType::STAR) ? '*' 
+                : (opType == TokenType::SLASH) ? '/' 
+                : '%';
         auto right = parsePrimary();
         left = make_unique<BinaryExpr>(op, move(left), move(right));
     }
     return left;
 }
+unique_ptr<Expr> Parser::parseLogical() {
+    auto left = parseComparison();
+    while (check(TokenType::AND) || check(TokenType::OR)) {
+        TokenType opType = advance().type;
+        auto right = parseComparison();
+        if (opType == TokenType::AND)
+            left = make_unique<AndExpr>(move(left), move(right));
+        else
+            left = make_unique<OrExpr>(move(left), move(right));
+    }
+    return left;
+}
 
-// primary → INT_LIT | "true" | "false" | "input" | IDENT | "(" expr ")"
+// func declaration
+unique_ptr<Stmt> Parser::parseFnDecl() {
+    advance();  // consume 'fn'
+    string name = expect(TokenType::IDENT, "Expected function name").value;
+    expect(TokenType::LPAREN, "Expected '(' after function name");
+
+    // parse parameters
+    vector<string> params;
+    if (!check(TokenType::RPAREN)) {
+        do {
+            params.push_back(
+                expect(TokenType::IDENT, "Expected parameter name").value);
+        } while (match(TokenType::COMMA));  // ← needs COMMA token (see below)
+    }
+    expect(TokenType::RPAREN, "Expected ')' after parameters");
+
+    StmtList body = parseBlock();
+    return make_unique<FnDecl>(move(name), move(params), move(body));
+}
+
+unique_ptr<Expr> Parser::parseCall(string name) {
+    advance();  // consume '('
+    vector<unique_ptr<Expr>> args;
+    if (!check(TokenType::RPAREN)) {
+        do {
+            args.push_back(parseExpr());
+        } while (match(TokenType::COMMA));
+    }
+    expect(TokenType::RPAREN, "Expected ')' after arguments");
+    return make_unique<CallExpr>(move(name), move(args));
+}
+
+// func return statement
+unique_ptr<Stmt> Parser::parseReturnStmt() {
+    advance();  // consume 'return'
+    unique_ptr<Expr> val;
+    if (!check(TokenType::SEMICOLON))
+        val = parseExpr();
+    expect(TokenType::SEMICOLON, "Expected ';' after return");
+    return make_unique<ReturnStmt>(move(val));
+}
+
+// primary -> INT_LIT | "true" | "false" | "input" | IDENT | "(" expr ")"
 unique_ptr<Expr> Parser::parsePrimary() {
+    if (check(TokenType::BANG)) {
+        advance();
+        auto operand = parsePrimary();
+        return make_unique<UnaryExpr>('!', move(operand));
+    }
+    if (check(TokenType::MINUS)) {
+        advance();  
+        auto operand = parsePrimary();
+        return make_unique<UnaryExpr>('-', move(operand));
+    }
     if (check(TokenType::INT_LIT)) {
         int32_t val = stoi(advance().value);
         return make_unique<IntLitExpr>(val);
     }
+    if (check(TokenType::STRING_LIT)) {
+        string val = advance().value;
+        return make_unique<StringLitExpr>(move(val));
+    }
     if (check(TokenType::TRUE_KW))  { advance(); return make_unique<BoolLitExpr>(true);  }
     if (check(TokenType::FALSE_KW)) { advance(); return make_unique<BoolLitExpr>(false); }
-    if (check(TokenType::INPUT))    { advance(); return make_unique<InputExpr>();         }
+    if (check(TokenType::INPUT))    { advance(); return make_unique<InputExpr>(); }
+    if (check(TokenType::SINPUT)) { advance(); return make_unique<SInputExpr>(); }
     if (check(TokenType::IDENT)) {
         string name = advance().value;
+        if (check(TokenType::LPAREN))          
+            return parseCall(move(name));
         return make_unique<VarExpr>(move(name));
     }
     if (match(TokenType::LPAREN)) {
