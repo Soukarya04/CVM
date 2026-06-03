@@ -1,0 +1,26 @@
+// String Operations Demo
+
+fn greet(name) {
+    return "Hello, " + name + "!";
+}
+
+fn classify(score) {
+    if (score >= 90) {
+        return "A";
+    } else if (score >= 80) {
+        return "B";
+    } else if (score >= 70) {
+        return "C";
+    } else if (score >= 60) {
+        return "D";
+    } else {
+        return "F";
+    }
+}
+
+print "Please enter your name:" ;
+let name = sinput;
+print greet(name) + " Please enter your score:" ;
+let score = input;
+let grade = classify(score);
+print "Your grade is: " + grade;
