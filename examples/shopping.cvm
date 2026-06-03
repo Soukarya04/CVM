@@ -1,0 +1,50 @@
+// A tiny shopping cart simulation.
+// Building this revealed some of the limitations which CVM++ currently has.
+//
+// What we WANTED to write :-
+//   let prices = [299, 149, 499, 99];
+//   let total = 0.0;
+//   for each price in prices { total += price * 1.18; }  // with 18% tax
+//   print "Total: $" + total;
+//
+// What we ACTUALLY had to do :-
+// No arrays, so items are individual variables
+let item1 = 299;   
+let item2 = 149;   
+let item3 = 499;   
+let item4 = 99;    
+
+// No floats, so 18% tax is faked using "integer scaling"
+fn withTax(price) {
+    return (price * 118) / 100;
+}
+
+fn totalBill(a, b, c, d) {
+    return withTax(a+b+c+d);
+}
+
+let bill = totalBill(item1, item2, item3, item4);
+
+// No floats means the "paise" are just truncated away
+// Rs.352.82 becomes Rs.352 — close enough for a language with no decimals
+let prev_bill = item1 + item2 + item3 + item4 ;
+print "Your bill (pre-tax items): " + prev_bill;
+print "Your bill (post 18% tax, integer): " + bill;
+
+// Discount logic — buy above Rs.900, get 10% off
+// Again, (bill * 90) / 100 instead of bill * 0.90
+fn applyDiscount(b) {
+    if (b > 900) {
+        return (b * 90) / 100;
+    }
+    return b;
+}
+
+let final = applyDiscount(bill);
+print "Final amount after discount: " + final;
+
+print "May we have your name?";
+let name = sinput;
+print "Thank you for shopping, " + name + "!";
+let savings = bill-final;
+print "You saved: " + savings;
