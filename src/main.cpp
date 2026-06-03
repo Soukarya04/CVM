@@ -10,21 +10,21 @@ using namespace std;
 
 static bool runSource(const string& source) {
     try {
-        // Stage 1: Lex
+        // stage 1: lex
         Lexer lexer(source);
         auto tokens = lexer.tokenize();
 
-        // Stage 2: Parse
+        // stage 2: parse
         Parser parser(move(tokens));
         Program prog = parser.parse();
 
-        // Stage 3: Compile
+        // stage 3: compile
         Compiler compiler;
         Chunk chunk = compiler.compile(prog);
 
-        // Stage 4: Execute
+        // stage 4: execute
         VM vm;
-        vm.run(chunk.code);
+        vm.run(chunk, compiler.functions);
 
         return true;
 
@@ -49,10 +49,10 @@ int main(int argc, char* argv[]) {
     }
 
     // repl mode
-    cout << "╔══════════════════════════════╗\n";
-    cout << "║   CVM++ Interactive REPL      ║\n";
-    cout << "║   Type 'exit' to quit         ║\n";
-    cout << "╚══════════════════════════════╝\n\n";
+    cout << "================================\n";
+    cout << "   CVM++ Interactive REPL\n";
+    cout << "   Type 'exit' to quit\n";
+    cout << "================================\n\n";
 
     string line;
     while (true) {
